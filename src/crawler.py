@@ -5,32 +5,49 @@ from anyio import to_thread
 from bs4 import BeautifulSoup
 from src.utils import TaskQueue
 from src.schemas import SaveMessage
+from tqdm import tqdm
+import logging
+import os
+
+logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.ERROR)
 
 
 class WikiCrawler:
-    def __init__(self, url: str, batch: int, processes: int):
+    def __init__(self, url: str, output_dir: str, batch: int, processes: int):
+        self.validate_wiki_url(url)
+
         self._scraped_urls = set()
         self._cur_urls = [url]
-        self._batch = batch
-        self._processes = processes
-
         self._task_queue: None | TaskQueue = None
 
-    @staticmethod
-    def page_saver(msg: SaveMessage):
-        url, text = msg.url, msg.text
-        path = f"pages/{url.split('/')[-1]}.txt"
-        with open(path, "w") as f:
-            f.write(text.replace("\n", ""))
+        self._output_dir = output_dir
+        self._batch = batch
+        self._processes = processes
 
     @property
     def task_queue(self):
         if self._task_queue is None:
             self._task_queue = TaskQueue(
-                self.page_saver, interval=0.01, processes=self._processes
+                self.page_saver,
+                interval=0.01,
+                processes=self._processes,
+                output_dir=self._output_dir,
             )
 
         return self._task_queue
+
+    @staticmethod
+    def validate_wiki_url(url: str):
+        if not url.startswith("https://pl.wikipedia.org"):
+            raise ValueError("URL must be from Polish Wikipedia")
+
+    @staticmethod
+    def page_saver(msg: SaveMessage, output_dir: str):
+        url, text = msg.url, msg.text
+        path = os.path.join(output_dir, f"{url.split('/')[-1]}.txt")
+        with open(path, "w") as f:
+            f.write(text.replace("\n", ""))
 
     async def run(self, iters: int):
         try:
@@ -43,11 +60,8 @@ class WikiCrawler:
     async def crawl(self, iters: int):
         for _it in range(iters):
             urls = set()
-            print(f"Iteration {_it} - scraping {len(self._cur_urls)} urls)")
-            for i in range(0, len(self._cur_urls), self._batch):
-                print(
-                    f"Scraping urls {i} - {i+self._batch} out of {len(self._cur_urls)}"
-                )
+            logging.info(f"Iteration {_it} - scraping {len(self._cur_urls)} urls)")
+            for i in tqdm(range(0, len(self._cur_urls), self._batch)):
                 _urls = self._cur_urls[i : i + self._batch]
                 for checked_url, child_urls, text in await asyncio.gather(
                     *[self.scrape(url) for url in _urls]
@@ -76,7 +90,9 @@ class WikiCrawler:
                 _url = text[s:e]
                 _url = "https://pl.wikipedia.org" + _url.replace('href="', "", 1)[:-1]
                 urls.add(_url)
-        except requests.exceptions.RequestException as e:
-            print(f"Error while scraping {url}: {e}")
 
-        return url, urls, body.get_text()
+            text = body.get_text()
+        except Exception as e:
+            logging.error(f"Error while scraping {url}: {e}")
+
+        return url, urls, text
