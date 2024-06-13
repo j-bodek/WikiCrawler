@@ -15,7 +15,8 @@ logging.basicConfig(level=logging.ERROR)
 
 class WikiCrawler:
     def __init__(self, url: str, output_dir: str, batch: int, processes: int):
-        self.validate_wiki_url(url)
+        self._validate_wiki_url(url)
+        self._validate_output_dir(output_dir)
 
         self._scraped_urls = set()
         self._cur_urls = [url]
@@ -38,9 +39,14 @@ class WikiCrawler:
         return self._task_queue
 
     @staticmethod
-    def validate_wiki_url(url: str):
+    def _validate_wiki_url(url: str):
         if not url.startswith("https://pl.wikipedia.org"):
             raise ValueError("URL must be from Polish Wikipedia")
+
+    @staticmethod
+    def _validate_output_dir(output_dir: str):
+        if not os.path.isdir(output_dir):
+            raise ValueError("Output directory does not exist")
 
     @staticmethod
     def page_saver(msg: SaveMessage, output_dir: str):
