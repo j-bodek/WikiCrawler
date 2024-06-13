@@ -64,7 +64,7 @@ class WikiCrawler:
             self._task_queue = None
 
     async def crawl(self, iters: int):
-        for _it in range(iters):
+        for _it in range(1, iters + 1):
             urls = set()
             logging.info(f"Iteration {_it} - scraping {len(self._cur_urls)} urls)")
             for i in tqdm(range(0, len(self._cur_urls), self._batch)):
@@ -75,10 +75,15 @@ class WikiCrawler:
                     if text is not None:
                         self.task_queue.add(SaveMessage(url=checked_url, text=text))
 
-                    urls.update(child_urls)
+                    if _it < iters:
+                        urls.update(child_urls)
 
             self._scraped_urls.update(set(self._cur_urls))
             urls = urls - self._scraped_urls
+            if not urls:
+                logging.info("No new URLs found, stopping")
+                break
+
             self._cur_urls = list(urls)
 
     async def scrape(self, url: str):
